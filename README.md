@@ -19,11 +19,16 @@ The **Marketplace Scanner** Chrome extension finds the cars and posts them to `/
    | `INGEST_KEY` | **Required.** A long random secret. Paste the same value into the scanner extension. |
    | `DASHBOARD_PASSWORD` | Optional. Turns on the login screen. |
    | `MIN_PROFIT` | Optional. Default `1000`. |
-   | `RESEND_API_KEY`, `ALERT_EMAIL_TO` | Optional. Sends an email when new deals or no-VIN cars arrive (resend.com). |
-   | `ALERT_EMAIL_FROM` | Optional. Needs a domain verified in Resend. Default `onboarding@resend.dev`. |
+   | `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Optional. Sends an email from that Gmail account when new deals or no-VIN cars arrive. Use a Google **App password**. |
+   | `ALERT_EMAIL_TO` | Optional. Comma-separated recipients. Defaults to `GMAIL_USER`. |
+   | `EMAIL_NO_VIN` | Optional. Set to `false` to email deals only. |
+   | `RESEND_API_KEY`, `ALERT_EMAIL_FROM` | Optional. Uses resend.com instead of Gmail. |
 
 4. Go to **Deployments → Redeploy** so the new variables take effect.
 5. In the scanner extension's settings, paste your site URL (for example `https://cars-daily-marketplace.vercel.app`) and the `INGEST_KEY`. Then click **Send all now**.
+
+## Test email
+Open `https://<your-site>/api/test-email?key=<INGEST_KEY>`. You should get a test email within a minute.
 
 ## Adding another marketplace later
 1. Add it to `lib/sources.ts`, for example `{ id: 'craigslist', name: 'Craigslist', short: 'Craigslist' }`. It gets its own tab with Deals and No VIN.
