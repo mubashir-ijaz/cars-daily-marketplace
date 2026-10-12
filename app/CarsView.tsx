@@ -80,7 +80,7 @@ export default function CarsView({ cars, kind, sourceName }: { cars: Car[]; kind
           </div>
         )}
         {list.map((c) => (
-          <article className="car" key={c.id}>
+          <article className="car" key={c.id} id={`car-${c.id}`}>
             <div className="ph">
               {c.img && (
                 // eslint-disable-next-line @next/next/no-img-element

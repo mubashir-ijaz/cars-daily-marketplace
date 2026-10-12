@@ -47,6 +47,7 @@ button, input, select { font: inherit; color: inherit; }
 .bar select { flex: 0 0 auto; }
 
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.car:target { outline: 3px solid var(--accent); outline-offset: 2px; scroll-margin-top: 110px; }
 .car { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
 .ph { position: relative; aspect-ratio: 16 / 10; background: var(--soft); }
 .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }

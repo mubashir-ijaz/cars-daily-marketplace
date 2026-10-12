@@ -36,7 +36,10 @@ export async function POST(req: Request) {
   }
 
   const res = await store.upsert(source, keep, drop);
-  const site = process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/?source=${source}` : null;
+  // Link used in emails: SITE_URL if set, else Vercel's production domain, else this request's host.
+  const host = process.env.SITE_URL?.replace(/\/+$/, '')
+    || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : new URL(req.url).origin);
+  const site = `${host}/?source=${source}`;
   let email: string | null = null;
   try { email = await emailNewCars(source, res.created, site); } catch (e) { email = 'Email failed: ' + (e as Error).message; }
 
