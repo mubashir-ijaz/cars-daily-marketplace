@@ -29,9 +29,11 @@ class RedisStore implements Store {
 
   private async getMany(source: string, ids: string[]): Promise<(Car | null)[]> {
     if (!ids.length) return [];
-    const vals = (await this.r.hmget(hashKey(source), ...ids)) as Record<string, string | null> | null;
-    return ids.map((id) => {
-      const v = vals?.[id];
+    // With automaticDeserialization off, HMGET returns an array in field order;
+    // older client versions return a { field: value } object. Accept both.
+    const vals = (await this.r.hmget(hashKey(source), ...ids)) as (string | null)[] | Record<string, string | null> | null;
+    return ids.map((id, i) => {
+      const v = Array.isArray(vals) ? vals[i] : vals?.[id];
       if (!v) return null;
       try { return JSON.parse(v) as Car; } catch { return null; }
     });
