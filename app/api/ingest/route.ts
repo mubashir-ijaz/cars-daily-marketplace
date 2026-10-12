@@ -1,0 +1,54 @@
+import { NextResponse } from 'next/server';
+import { isSource } from '@/lib/sources';
+import { toCar } from '@/lib/classify';
+import { store, hasDatabase } from '@/lib/db';
+import { safeEqual } from '@/lib/auth';
+import { emailNewCars } from '@/lib/notify';
+
+export const dynamic = 'force-dynamic';
+
+// Scanners POST here:
+//   Authorization: Bearer <INGEST_KEY>
+//   { "source": "facebook", "listings": [ { id, url, title, price, mileage, vin, mmrBase, mmrGrade, ... } ] }
+// Cars with a VIN are kept only when MMR - price >= MIN_PROFIT (default 1000).
+// Cars without a VIN go to the "No VIN" tab.
+export async function POST(req: Request) {
+  const key = process.env.INGEST_KEY;
+  if (!key) return NextResponse.json({ ok: false, error: 'INGEST_KEY is not set on the server.' }, { status: 500 });
+  const auth = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+  if (!safeEqual(auth, key)) return NextResponse.json({ ok: false, error: 'Bad ingest key.' }, { status: 401 });
+
+  let body: { source?: unknown; listings?: unknown };
+  try { body = await req.json(); } catch { return NextResponse.json({ ok: false, error: 'Bad JSON.' }, { status: 400 }); }
+  if (!isSource(body.source)) return NextResponse.json({ ok: false, error: 'Unknown source.' }, { status: 400 });
+  if (!Array.isArray(body.listings)) return NextResponse.json({ ok: false, error: 'listings must be an array.' }, { status: 400 });
+  if (body.listings.length > 500) return NextResponse.json({ ok: false, error: 'Max 500 listings per request.' }, { status: 413 });
+
+  const source = body.source;
+  const now = Date.now();
+  const keep = [];
+  const drop: string[] = [];
+  for (const raw of body.listings) {
+    if (!raw || typeof raw !== 'object') continue;
+    const car = toCar(source, raw as Record<string, unknown>, now);
+    if (car) keep.push(car);
+    else if (typeof (raw as { id?: unknown }).id === 'string') drop.push((raw as { id: string }).id);
+  }
+
+  const res = await store.upsert(source, keep, drop);
+  const site = process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/?source=${source}` : null;
+  let email: string | null = null;
+  try { email = await emailNewCars(source, res.created, site); } catch (e) { email = 'Email failed: ' + (e as Error).message; }
+
+  return NextResponse.json({
+    ok: true,
+    database: hasDatabase ? 'redis' : 'memory (not saved — connect Upstash Redis)',
+    received: body.listings.length,
+    stored: keep.length,
+    new: res.created.length,
+    newDeals: res.created.filter((c) => c.kind === 'deal').length,
+    newNoVin: res.created.filter((c) => c.kind === 'novin').length,
+    skipped: drop.length,
+    email,
+  });
+}
