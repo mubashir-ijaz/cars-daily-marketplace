@@ -1,25 +1,39 @@
 import { Redis } from '@upstash/redis';
-import type { Car, Kind } from './types';
+import type { Car, Day, Kind } from './types';
+import { DAY_MS, KEEP_MS } from './classify';
 
 // Storage: Upstash Redis (add it from the Vercel dashboard → Storage /
 // Marketplace → Upstash Redis; Vercel sets the env vars automatically).
 // Without those env vars an in-memory store is used — fine for local dev only.
+//
+// Cars live for 48 h from when they were first found: the first 24 h under
+// "Today", the next 24 h under "Yesterday", then they are deleted.
 
 const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
 const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 export const hasDatabase = !!(url && token);
 
 const MAX_PER_LIST = 3000;
+const KINDS: Kind[] = ['deal', 'novin'];
 const hashKey = (source: string) => `cars:${source}`;
 const listKey = (source: string, kind: Kind) => `list:${source}:${kind}`;
+// Every stored id (hidden ones too), scored by firstSeen — used to delete old cars.
+const allKey = (source: string) => `all:${source}`;
+
+/** firstSeen range [min, max] for a day tab. */
+export function dayRange(day: Day, now = Date.now()): [number, number] {
+  return day === 'today' ? [now - DAY_MS, now + DAY_MS] : [now - KEEP_MS, now - DAY_MS - 1];
+}
 
 export type UpsertResult = { created: Car[]; updated: number; removed: number };
+export type Counts = Record<Day, Record<Kind, number>>;
 
 interface Store {
   upsert(source: string, cars: Car[], dropIds: string[]): Promise<UpsertResult>;
-  list(source: string, kind: Kind, limit?: number): Promise<Car[]>;
-  counts(source: string): Promise<Record<Kind, number>>;
+  list(source: string, kind: Kind, day: Day, limit?: number): Promise<Car[]>;
+  counts(source: string): Promise<Counts>;
   hide(source: string, id: string): Promise<void>;
+  prune(source: string): Promise<number>;
 }
 
 // ---------- Redis ----------
@@ -53,21 +67,39 @@ class RedisStore implements Store {
         updated++;
       } else created.push(car);
       p.hset(hashKey(source), { [car.id]: JSON.stringify(car) });
+      p.zadd(allKey(source), { score: car.firstSeen, member: car.id });
       if (!car.hidden) p.zadd(listKey(source, car.kind), { score: car.firstSeen, member: car.id });
     });
-    // Listings that no longer qualify (e.g. re-priced under MIN_PROFIT).
+    // Listings that no longer qualify (re-priced under MIN_PROFIT, dealer, too old).
     for (const id of dropIds) {
-      p.zrem(listKey(source, 'deal'), id);
-      p.zrem(listKey(source, 'novin'), id);
+      for (const k of KINDS) p.zrem(listKey(source, k), id);
+      p.zrem(allKey(source), id);
       p.hdel(hashKey(source), id);
     }
     if (cars.length || dropIds.length) await p.exec();
+    await this.prune(source);
     await this.trim(source);
     return { created, updated, removed: dropIds.length };
   }
 
+  /** Deletes cars first found more than 48 h ago. */
+  async prune(source: string) {
+    const cutoff = Date.now() - KEEP_MS;
+    const ids = new Set<string>();
+    for (const key of [allKey(source), ...KINDS.map((k) => listKey(source, k))]) {
+      for (const id of (await this.r.zrange(key, 0, cutoff, { byScore: true })) as string[]) ids.add(id);
+    }
+    if (!ids.size) return 0;
+    const list = [...ids];
+    const p = this.r.pipeline();
+    for (const key of [allKey(source), ...KINDS.map((k) => listKey(source, k))]) p.zremrangebyscore(key, 0, cutoff);
+    for (let i = 0; i < list.length; i += 500) p.hdel(hashKey(source), ...list.slice(i, i + 500));
+    await p.exec();
+    return list.length;
+  }
+
   private async trim(source: string) {
-    for (const kind of ['deal', 'novin'] as Kind[]) {
+    for (const kind of KINDS) {
       const n = await this.r.zcard(listKey(source, kind));
       if (n <= MAX_PER_LIST) continue;
       const old = (await this.r.zrange(listKey(source, kind), 0, n - MAX_PER_LIST - 1)) as string[];
@@ -77,14 +109,19 @@ class RedisStore implements Store {
     }
   }
 
-  async list(source: string, kind: Kind, limit = 500): Promise<Car[]> {
-    const ids = (await this.r.zrange(listKey(source, kind), 0, limit - 1, { rev: true })) as string[];
+  async list(source: string, kind: Kind, day: Day, limit = 500): Promise<Car[]> {
+    const [min, max] = dayRange(day);
+    const ids = (await this.r.zrange(listKey(source, kind), max, min, { byScore: true, rev: true, offset: 0, count: limit })) as string[];
     return (await this.getMany(source, ids)).filter((c): c is Car => !!c && !c.hidden);
   }
 
-  async counts(source: string) {
-    const [deal, novin] = await Promise.all([this.r.zcard(listKey(source, 'deal')), this.r.zcard(listKey(source, 'novin'))]);
-    return { deal, novin };
+  async counts(source: string): Promise<Counts> {
+    const out = { today: { deal: 0, novin: 0 }, yesterday: { deal: 0, novin: 0 } } as Counts;
+    await Promise.all((['today', 'yesterday'] as Day[]).flatMap((day) => KINDS.map(async (kind) => {
+      const [min, max] = dayRange(day);
+      out[day][kind] = await this.r.zcount(listKey(source, kind), min, max);
+    })));
+    return out;
   }
 
   async hide(source: string, id: string) {
@@ -93,8 +130,7 @@ class RedisStore implements Store {
     car.hidden = true;
     const p = this.r.pipeline();
     p.hset(hashKey(source), { [id]: JSON.stringify(car) });
-    p.zrem(listKey(source, 'deal'), id);
-    p.zrem(listKey(source, 'novin'), id);
+    for (const k of KINDS) p.zrem(listKey(source, k), id);
     await p.exec();
   }
 }
@@ -104,6 +140,7 @@ class RedisStore implements Store {
 class MemoryStore implements Store {
   m = new Map<string, Car>();
   private k = (s: string, id: string) => `${s}:${id}`;
+  private inDay = (c: Car, day: Day) => { const [min, max] = dayRange(day); return c.firstSeen >= min && c.firstSeen <= max; };
 
   async upsert(source: string, cars: Car[], dropIds: string[]): Promise<UpsertResult> {
     const created: Car[] = [];
@@ -114,15 +151,23 @@ class MemoryStore implements Store {
       this.m.set(this.k(source, car.id), car);
     }
     dropIds.forEach((id) => this.m.delete(this.k(source, id)));
+    await this.prune(source);
     return { created, updated, removed: dropIds.length };
   }
-  async list(source: string, kind: Kind, limit = 500) {
-    return [...this.m.values()].filter((c) => c.source === source && c.kind === kind && !c.hidden)
+  async prune(source: string) {
+    const cutoff = Date.now() - KEEP_MS;
+    let n = 0;
+    for (const [k, c] of this.m) if (c.source === source && c.firstSeen < cutoff) { this.m.delete(k); n++; }
+    return n;
+  }
+  async list(source: string, kind: Kind, day: Day, limit = 500) {
+    return [...this.m.values()].filter((c) => c.source === source && c.kind === kind && !c.hidden && this.inDay(c, day))
       .sort((a, b) => b.firstSeen - a.firstSeen).slice(0, limit);
   }
   async counts(source: string) {
     const all = [...this.m.values()].filter((c) => c.source === source && !c.hidden);
-    return { deal: all.filter((c) => c.kind === 'deal').length, novin: all.filter((c) => c.kind === 'novin').length };
+    const n = (day: Day, kind: Kind) => all.filter((c) => c.kind === kind && this.inDay(c, day)).length;
+    return { today: { deal: n('today', 'deal'), novin: n('today', 'novin') }, yesterday: { deal: n('yesterday', 'deal'), novin: n('yesterday', 'novin') } };
   }
   async hide(source: string, id: string) {
     const c = this.m.get(this.k(source, id));

@@ -1,4 +1,6 @@
 export type Kind = 'deal' | 'novin';
+/** today = found in the last 24 h, yesterday = 24–48 h ago. Older cars are deleted. */
+export type Day = 'today' | 'yesterday';
 
 export type Car = {
   source: string;
@@ -20,6 +22,21 @@ export type Car = {
   mmr: number | null;
   /** mmr - price */
   profit: number | null;
+  /** Extra details read from the listing (all optional). */
+  description?: string | null;
+  phone?: string | null;
+  titleStatus?: string | null;
+  owners?: number | null;
+  carfax?: string | null;
+  accidents?: string | null;
+  issues?: string | null;
+  transmission?: string | null;
+  exteriorColor?: string | null;
+  interiorColor?: string | null;
+  fuel?: string | null;
+  sellerName?: string | null;
+  sellerJoined?: number | null;
+  listed?: string | null;
   firstSeen: number;
   updatedAt: number;
   hidden?: boolean;
