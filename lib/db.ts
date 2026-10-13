@@ -32,7 +32,7 @@ interface Store {
   upsert(source: string, cars: Car[], dropIds: string[]): Promise<UpsertResult>;
   list(source: string, kind: Kind, day: Day, limit?: number): Promise<Car[]>;
   counts(source: string): Promise<Counts>;
-  hide(source: string, id: string): Promise<void>;
+  hide(source: string, id: string, hidden?: boolean): Promise<void>;
   prune(source: string): Promise<number>;
 }
 
@@ -124,13 +124,15 @@ class RedisStore implements Store {
     return out;
   }
 
-  async hide(source: string, id: string) {
+  /** hidden=false brings a hidden car back (the "Undo" button). */
+  async hide(source: string, id: string, hidden = true) {
     const [car] = await this.getMany(source, [id]);
     if (!car) return;
-    car.hidden = true;
+    car.hidden = hidden;
     const p = this.r.pipeline();
     p.hset(hashKey(source), { [id]: JSON.stringify(car) });
-    for (const k of KINDS) p.zrem(listKey(source, k), id);
+    if (hidden) for (const k of KINDS) p.zrem(listKey(source, k), id);
+    else p.zadd(listKey(source, car.kind), { score: car.firstSeen, member: id });
     await p.exec();
   }
 }
@@ -169,9 +171,9 @@ class MemoryStore implements Store {
     const n = (day: Day, kind: Kind) => all.filter((c) => c.kind === kind && this.inDay(c, day)).length;
     return { today: { deal: n('today', 'deal'), novin: n('today', 'novin') }, yesterday: { deal: n('yesterday', 'deal'), novin: n('yesterday', 'novin') } };
   }
-  async hide(source: string, id: string) {
+  async hide(source: string, id: string, hidden = true) {
     const c = this.m.get(this.k(source, id));
-    if (c) c.hidden = true;
+    if (c) c.hidden = hidden;
   }
 }
 

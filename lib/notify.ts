@@ -1,3 +1,4 @@
+import { BRAND } from './brand';
 import nodemailer from 'nodemailer';
 import type { Car } from './types';
 import { getSource } from './sources';
@@ -81,7 +82,7 @@ export async function emailNewCars(source: string, created: Car[], siteUrl: stri
   if (deals.length) parts.push(`${deals.length} deal${deals.length > 1 ? 's' : ''}`);
   if (novin.length) parts.push(`${novin.length} no-VIN`);
   const best = deals[0]?.profit;
-  const subject = `${src}: ${parts.join(', ')}${best != null ? ` — best +${usd(best)}` : ''}`;
+  const subject = `${BRAND} · ${src}: ${parts.join(', ')}${best != null ? ` — best +${usd(best)}` : ''}`;
 
   const td = 'padding:6px 10px;border-bottom:1px solid #eee;vertical-align:top';
   const btn = (href: string, label: string) =>
