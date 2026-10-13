@@ -169,7 +169,7 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
       <div className="toolbar">
         <div className="bar">
           <label className="searchbox">
-            <Svg d="M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9" />
+            <Svg d="M10 2a8 8 0 0 1 6.32 12.9l5.39 5.4-1.41 1.4-5.4-5.39A8 8 0 1 1 10 2m0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12" />
             <input type="search" placeholder="Search make, model, VIN, city, phone…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search cars" />
           </label>
           <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort">
