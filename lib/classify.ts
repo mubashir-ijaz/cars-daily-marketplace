@@ -73,6 +73,8 @@ export function toCar(source: string, raw: Record<string, unknown>, now = Date.n
     fuel: str(raw.fuel, 30),
     sellerName: str(raw.sellerName, 60),
     sellerJoined: num(raw.sellerJoined),
+    sellerCars: num(raw.sellerCars),
+    sellerListings: num(raw.sellerListings),
     listed: str(raw.listed, 40),
     firstSeen,
     updatedAt: now,

@@ -261,8 +261,8 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
                   <div className="chips">{chips.map((x) => <span key={x.t} className={`chip ${x.tone ?? ''}`}>{x.t}</span>)}</div>
                 )}
                 {specs && <div className="specs">{specs}</div>}
-                {(c.sellerName || c.sellerJoined) && (
-                  <div className="seller"><Svg d={P.user} size={14} /> {c.sellerName || 'Private seller'}{c.sellerJoined ? ` · on Facebook since ${c.sellerJoined}` : ''}</div>
+                {(c.sellerName || c.sellerJoined || c.sellerCars != null) && (
+                  <div className="seller"><Svg d={P.user} size={14} /> {c.sellerName || 'Private seller'}{c.sellerJoined ? ` · on Facebook since ${c.sellerJoined}` : ''}{c.sellerCars != null ? ` · ${c.sellerCars} car${c.sellerCars === 1 ? '' : 's'} listed` : ''}</div>
                 )}
                 {c.vin && <CopyVin vin={c.vin} />}
                 {c.mmrName && <div className="mmrname">MMR: {c.mmrName}</div>}

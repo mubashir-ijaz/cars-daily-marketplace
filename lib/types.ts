@@ -36,6 +36,9 @@ export type Car = {
   fuel?: string | null;
   sellerName?: string | null;
   sellerJoined?: number | null;
+  /** Cars (not parts) on the seller's Marketplace profile, and all their active listings. */
+  sellerCars?: number | null;
+  sellerListings?: number | null;
   listed?: string | null;
   firstSeen: number;
   updatedAt: number;
