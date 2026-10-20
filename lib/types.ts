@@ -22,6 +22,10 @@ export type Car = {
   mmr: number | null;
   /** mmr - price */
   profit: number | null;
+  /** How the MMR was found: from the VIN, or from the title (year / make / model / trim) when there is no VIN. */
+  mmrBy?: 'vin' | 'name' | null;
+  /** Shown on the card: what the name lookup matched, or why there is no MMR. */
+  mmrNote?: string | null;
   /** Extra details read from the listing (all optional). */
   description?: string | null;
   phone?: string | null;

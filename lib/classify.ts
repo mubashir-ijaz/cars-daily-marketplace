@@ -22,6 +22,33 @@ const httpsUrl = (v: unknown): string | null => {
   try { return new URL(s).protocol === 'https:' ? s : null; } catch { return null; }
 };
 
+// RVs, semis, equipment, bikes, boats, containers… — never shown.
+const NOT_CAR = /\b(kubota|bobcat|john deere|caterpillar|excavator|skid steer|tractor|forklift|forr?est river|wildwood|keystone|jayco|travel trailer|toy hauler|camper|motorhome|rv|peterbilt|kenworth|freightliner|volvo vnl|volvo [678]\d0|international (lt|prostar|lonestar|durastar|\d{4})|semi ?truck|container|conex|boat|pontoon|yacht|jet ?ski|harley|motorcycle|dirt ?bike|atv|utv|can-?\s*am|polaris|golf ?cart|trailer(?!\s+hitch))\b/i;
+export const looksLikeCar = (title: string | null | undefined) =>
+  !!title && /^(19[3-9]\d|20[0-3]\d)\s+[a-z]/i.test(title.trim()) && !NOT_CAR.test(title);
+
+/**
+ * A no-VIN car is only shown when Manheim knew it (MMR by name) or the scanner explained why it has no MMR
+ * (older scanners sent every no-VIN listing, including RVs and equipment).
+ */
+export const showable = (c: Car) => looksLikeCar(c.title) && (c.kind === 'deal' || c.mmr != null || !!c.mmrNote);
+
+/** Same car listed twice (relisted, or found from two locations). */
+export const dupKey = (c: Car) => c.vin ? `vin:${c.vin}`
+  : `t:${(c.title ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')}|${c.price ?? ''}|${(c.sellerName || c.location || '').toLowerCase()}`;
+
+/** Keeps the first car of each dupKey (lists are newest first) and drops non-cars. */
+export function cleanList(cars: Car[]): Car[] {
+  const seen = new Set<string>();
+  return cars.filter((c) => {
+    if (!showable(c)) return false;
+    const k = dupKey(c);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 /**
  * Turns a raw listing from a scanner into a stored Car, or null when it
  * doesn't belong on the dashboard (has a VIN but the spread is under MIN_PROFIT).
@@ -43,10 +70,14 @@ export function toCar(source: string, raw: Record<string, unknown>, now = Date.n
   const mmr = mmrGrade ?? mmrBase;
   const profit = mmr != null && price != null ? mmr - price : null;
 
+  const mmrBy = vin ? 'vin' : mmr != null ? 'name' : null;
+  // Deals priced by name (no VIN) go to Deals too; other no-VIN cars stay in No VIN, with their MMR or a note.
   let kind: Kind;
-  if (!vin) kind = 'novin';
-  else if (profit != null && profit >= minProfit()) kind = 'deal';
+  if (profit != null && profit >= minProfit()) kind = 'deal';
+  else if (!vin) kind = 'novin';
   else return null;
+  if (!looksLikeCar(str(raw.title, 200)) && !vin) return null;
+  if (!vin && mmr == null && !str(raw.mmrNote, 300)) return null;
 
   return {
     source, id, kind, url,
@@ -59,7 +90,8 @@ export function toCar(source: string, raw: Record<string, unknown>, now = Date.n
     search: str(raw.search, 80),
     img: httpsUrl(raw.img),
     mmrName: str(raw.mmrName, 200),
-    mmrBase, mmrGrade, mmr, profit,
+    mmrBase, mmrGrade, mmr, profit, mmrBy,
+    mmrNote: str(raw.mmrNote, 300),
     description: str(raw.description, 1600),
     phone: str(raw.phone, 80),
     titleStatus: str(raw.titleStatus, 60),

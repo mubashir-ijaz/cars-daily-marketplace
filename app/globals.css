@@ -119,6 +119,9 @@ button:disabled { cursor: default; opacity: .7; }
 .chip.good { background: var(--good-bg); color: var(--good); border-color: transparent; }
 .chip.bad { background: var(--bad-bg); color: var(--bad); border-color: transparent; }
 .specs, .mmrname { font-size: 12.5px; color: var(--muted); }
+.spread.neg { background: var(--soft); color: var(--muted); }
+.mmrnote { font-size: 12.5px; line-height: 1.4; padding: 8px 10px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); }
+.mmrnote.none { background: var(--bad-bg); color: var(--bad); }
 .seller { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .vin { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); background: var(--soft); border: 1px dashed var(--line); border-radius: 8px; padding: 4px 8px; word-break: break-all; text-align: left; }
 .vin:hover { color: var(--accent); border-color: var(--accent); }

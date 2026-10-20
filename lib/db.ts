@@ -1,6 +1,6 @@
 import { Redis } from '@upstash/redis';
 import type { Car, Day, Kind } from './types';
-import { DAY_MS, KEEP_MS } from './classify';
+import { DAY_MS, KEEP_MS, cleanList } from './classify';
 
 // Storage: Upstash Redis (add it from the Vercel dashboard → Storage /
 // Marketplace → Upstash Redis; Vercel sets the env vars automatically).
@@ -112,14 +112,14 @@ class RedisStore implements Store {
   async list(source: string, kind: Kind, day: Day, limit = 500): Promise<Car[]> {
     const [min, max] = dayRange(day);
     const ids = (await this.r.zrange(listKey(source, kind), max, min, { byScore: true, rev: true, offset: 0, count: limit })) as string[];
-    return (await this.getMany(source, ids)).filter((c): c is Car => !!c && !c.hidden);
+    return cleanList((await this.getMany(source, ids)).filter((c): c is Car => !!c && !c.hidden));
   }
 
+  /** Counts what the tabs show (no duplicates or non-cars). */
   async counts(source: string): Promise<Counts> {
     const out = { today: { deal: 0, novin: 0 }, yesterday: { deal: 0, novin: 0 } } as Counts;
     await Promise.all((['today', 'yesterday'] as Day[]).flatMap((day) => KINDS.map(async (kind) => {
-      const [min, max] = dayRange(day);
-      out[day][kind] = await this.r.zcount(listKey(source, kind), min, max);
+      out[day][kind] = (await this.list(source, kind, day)).length;
     })));
     return out;
   }
@@ -163,13 +163,12 @@ class MemoryStore implements Store {
     return n;
   }
   async list(source: string, kind: Kind, day: Day, limit = 500) {
-    return [...this.m.values()].filter((c) => c.source === source && c.kind === kind && !c.hidden && this.inDay(c, day))
-      .sort((a, b) => b.firstSeen - a.firstSeen).slice(0, limit);
+    return cleanList([...this.m.values()].filter((c) => c.source === source && c.kind === kind && !c.hidden && this.inDay(c, day))
+      .sort((a, b) => b.firstSeen - a.firstSeen).slice(0, limit));
   }
   async counts(source: string) {
-    const all = [...this.m.values()].filter((c) => c.source === source && !c.hidden);
-    const n = (day: Day, kind: Kind) => all.filter((c) => c.kind === kind && this.inDay(c, day)).length;
-    return { today: { deal: n('today', 'deal'), novin: n('today', 'novin') }, yesterday: { deal: n('yesterday', 'deal'), novin: n('yesterday', 'novin') } };
+    const n = async (day: Day, kind: Kind) => (await this.list(source, kind, day)).length;
+    return { today: { deal: await n('today', 'deal'), novin: await n('today', 'novin') }, yesterday: { deal: await n('yesterday', 'deal'), novin: await n('yesterday', 'novin') } };
   }
   async hide(source: string, id: string, hidden = true) {
     const c = this.m.get(this.k(source, id));

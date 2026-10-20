@@ -233,6 +233,7 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
                   {kind === 'deal'
                     ? <span className="badge">+{usd(c.profit)} spread</span>
                     : <span className="badge nv">No VIN</span>}
+                  {kind === 'deal' && c.mmrBy === 'name' && <span className="badge nv">By name</span>}
                   {isNew && <span className="badge new">New</span>}
                 </div>
                 <button type="button" className="hide" title="Hide this car" aria-label={`Hide ${c.title || 'this car'}`} onClick={() => hide(c)}>
@@ -251,12 +252,16 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
                 </div>
                 <div className="nums">
                   <div className="n"><div className="k">Asking</div><div className="v">{usd(c.price)}</div></div>
-                  <div className="n"><div className="k">MMR</div><div className="v">{usd(c.mmr)}</div></div>
+                  <div className="n"><div className="k">MMR{c.mmrBy === 'name' ? ' (by name)' : ''}</div><div className="v">{usd(c.mmr)}</div></div>
                   <div className="n"><div className="k">Miles</div><div className="v">{miles(c.mileage)}</div></div>
                 </div>
                 {kind === 'deal' && (
                   <div className="spread"><span>Potential profit</span><span>+{usd(c.profit)}</span></div>
                 )}
+                {kind === 'novin' && c.profit != null && (
+                  <div className={`spread ${c.profit < 0 ? 'neg' : ''}`}><span>MMR − asking</span><span>{c.profit >= 0 ? '+' : ''}{usd(c.profit)}</span></div>
+                )}
+                {c.mmrNote && <div className={`mmrnote ${c.mmr == null ? 'none' : ''}`}>{c.mmrNote}</div>}
                 {!!chips.length && (
                   <div className="chips">{chips.map((x) => <span key={x.t} className={`chip ${x.tone ?? ''}`}>{x.t}</span>)}</div>
                 )}
@@ -265,7 +270,7 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
                   <div className="seller"><Svg d={P.user} size={14} /> {c.sellerName || 'Private seller'}{c.sellerJoined ? ` · on Facebook since ${c.sellerJoined}` : ''}{c.sellerCars != null ? ` · ${c.sellerCars} car${c.sellerCars === 1 ? '' : 's'} listed` : ''}</div>
                 )}
                 {c.vin && <CopyVin vin={c.vin} />}
-                {c.mmrName && <div className="mmrname">MMR: {c.mmrName}</div>}
+                {c.mmrName && !c.mmrNote && <div className="mmrname">MMR: {c.mmrName}</div>}
                 {c.description && (
                   <details className="desc">
                     <summary>Seller&apos;s description</summary>
