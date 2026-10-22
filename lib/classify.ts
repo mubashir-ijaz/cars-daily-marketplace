@@ -116,6 +116,7 @@ export function toCar(source: string, raw: Record<string, unknown>, now = Date.n
     interiorColor: str(raw.interiorColor, 30),
     fuel: str(raw.fuel, 30),
     sellerName: str(raw.sellerName, 60),
+    sellerId: str(raw.sellerId, 40),
     sellerJoined: num(raw.sellerJoined),
     sellerCars: num(raw.sellerCars),
     sellerListings: num(raw.sellerListings),

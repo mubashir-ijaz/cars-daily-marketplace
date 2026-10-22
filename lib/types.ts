@@ -1,4 +1,18 @@
 export type Kind = 'deal' | 'novin';
+
+/** A seller the scanner found to be a dealer. Kept permanently so the next scans skip them right away. */
+export type Dealer = {
+  id: string;
+  name: string | null;
+  /** Cars on their Marketplace profile when they were checked. */
+  cars: number | null;
+  titles: string[];
+  /** 'profile' (3+ cars listed), 'listing text' (financing, dealership…) or 'manual'. */
+  reason: string;
+  location: string | null;
+  firstSeen: number;
+  lastSeen: number;
+};
 /** today = found in the last 24 h, yesterday = 24–48 h ago. Older cars are deleted. */
 export type Day = 'today' | 'yesterday';
 
@@ -39,6 +53,8 @@ export type Car = {
   interiorColor?: string | null;
   fuel?: string | null;
   sellerName?: string | null;
+  /** Facebook profile id of the seller (used to skip known dealers). */
+  sellerId?: string | null;
   sellerJoined?: number | null;
   /** Cars (not parts) on the seller's Marketplace profile, and all their active listings. */
   sellerCars?: number | null;

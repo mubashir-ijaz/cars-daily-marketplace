@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isSource } from '@/lib/sources';
 import { toCar } from '@/lib/classify';
 import { store, hasDatabase } from '@/lib/db';
-import { safeEqual } from '@/lib/auth';
+import { checkIngestKey } from '@/lib/ingestAuth';
 import { emailNewCars } from '@/lib/notify';
 
 export const dynamic = 'force-dynamic';
@@ -14,10 +14,8 @@ export const dynamic = 'force-dynamic';
 // DEALER_CARS (3) cars listed, and MMR - price >= MIN_PROFIT (default 1000). MMR comes from the VIN or,
 // without a VIN, from the title (mmrBy: 'name'). SHOW_NO_VIN=true also keeps no-VIN cars without a deal.
 export async function POST(req: Request) {
-  const key = process.env.INGEST_KEY;
-  if (!key) return NextResponse.json({ ok: false, error: 'INGEST_KEY is not set on the server.' }, { status: 500 });
-  const auth = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-  if (!safeEqual(auth, key)) return NextResponse.json({ ok: false, error: 'Bad ingest key.' }, { status: 401 });
+  const bad = checkIngestKey(req);
+  if (bad) return bad;
 
   let body: { source?: unknown; listings?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ ok: false, error: 'Bad JSON.' }, { status: 400 }); }
@@ -29,10 +27,11 @@ export async function POST(req: Request) {
   const now = Date.now();
   const keep = [];
   const drop: string[] = [];
+  const dealerIds = new Set((await store.dealers(source)).map((d) => d.id));
   for (const raw of body.listings) {
     if (!raw || typeof raw !== 'object') continue;
     const car = toCar(source, raw as Record<string, unknown>, now);
-    if (car) keep.push(car);
+    if (car && !(car.sellerId && dealerIds.has(car.sellerId))) keep.push(car);
     else if (typeof (raw as { id?: unknown }).id === 'string') drop.push((raw as { id: string }).id);
   }
 

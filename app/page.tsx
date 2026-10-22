@@ -20,6 +20,7 @@ const I = {
   sun: 'M12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10m0-5 2 3h-4zm0 20-2-3h4zM2 12l3-2v4zm20 0-3 2v-4z',
   clock: 'M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20m.5 5H11v6l5.2 3.2.8-1.3-4.5-2.7z',
   money: 'M11.8 10.9c-2.3-.6-3-1.2-3-2.1 0-1.1 1-1.8 2.7-1.8 1.8 0 2.4.8 2.5 2.1h2.2a4 4 0 0 0-3.2-3.8V3h-3v2.2C8 5.6 6.6 6.8 6.6 8.8c0 2.3 1.9 3.5 4.8 4.2 2.6.6 3.1 1.5 3.1 2.5 0 .7-.5 1.9-2.7 1.9-2.1 0-2.9-.9-3-2.1H6.6c.1 2.2 1.8 3.5 3.8 3.9V21h3v-2.2c1.9-.4 3.5-1.5 3.5-3.6 0-2.8-2.4-3.8-5.1-4.3',
+  store: 'M4 4h16v2H4zm16 3H4l-1 5v2h1v6h10v-6h4v6h2v-6h1v-2zm-8 11H6v-4h6z',
   search: 'M10 2a8 8 0 0 1 6.32 12.9l5.39 5.4-1.41 1.4-5.4-5.39A8 8 0 1 1 10 2m0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12',
 };
 
@@ -38,6 +39,7 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
     })),
   ]);
   const totals = Object.fromEntries(allCounts);
+  const dealerCount = (await store.dealers(source.id)).length;
   const min = minProfit();
   const minLabel = `$${min.toLocaleString('en-US')}+`;
   const href = (p: { source?: string; tab?: Kind; day?: Day }) =>
@@ -82,6 +84,14 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
                   <span className="ol"><Icon d={I.search} /> No VIN</span> <span className="count">{counts[day].novin}</span>
                 </Link>
               )}
+            </nav>
+          </div>
+          <div className="grp">
+            <div className="gh">Sellers</div>
+            <nav className="opts">
+              <Link href={`/dealers?source=${source.id}`}>
+                <span className="ol"><Icon d={I.store} /> Dealers skipped</span> <span className="count">{dealerCount}</span>
+              </Link>
             </nav>
           </div>
           <div className="info">

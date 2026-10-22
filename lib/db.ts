@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import type { Car, Day, Kind } from './types';
+import type { Car, Day, Dealer, Kind } from './types';
 import { DAY_MS, KEEP_MS, cleanList } from './classify';
 
 // Storage: Upstash Redis (add it from the Vercel dashboard → Storage /
@@ -19,6 +19,8 @@ const hashKey = (source: string) => `cars:${source}`;
 const listKey = (source: string, kind: Kind) => `list:${source}:${kind}`;
 // Every stored id (hidden ones too), scored by firstSeen — used to delete old cars.
 const allKey = (source: string) => `all:${source}`;
+// Dealers never expire: sellerId -> Dealer JSON.
+const dealerKey = (source: string) => `dealers:${source}`;
 
 /** firstSeen range [min, max] for a day tab. */
 export function dayRange(day: Day, now = Date.now()): [number, number] {
@@ -34,7 +36,15 @@ interface Store {
   counts(source: string): Promise<Counts>;
   hide(source: string, id: string, hidden?: boolean): Promise<void>;
   prune(source: string): Promise<number>;
+  dealers(source: string): Promise<Dealer[]>;
+  /** Adds or updates dealers (keeps the earliest firstSeen). */
+  saveDealers(source: string, list: Dealer[]): Promise<number>;
+  removeDealers(source: string, ids: string[]): Promise<number>;
 }
+
+const mergeDealer = (old: Dealer | undefined, d: Dealer): Dealer =>
+  old ? { ...old, ...d, name: d.name ?? old.name, cars: d.cars ?? old.cars, titles: d.titles.length ? d.titles : old.titles,
+    location: d.location ?? old.location, firstSeen: Math.min(old.firstSeen, d.firstSeen), lastSeen: Math.max(old.lastSeen, d.lastSeen) } : d;
 
 // ---------- Redis ----------
 
@@ -112,7 +122,8 @@ class RedisStore implements Store {
   async list(source: string, kind: Kind, day: Day, limit = 500): Promise<Car[]> {
     const [min, max] = dayRange(day);
     const ids = (await this.r.zrange(listKey(source, kind), max, min, { byScore: true, rev: true, offset: 0, count: limit })) as string[];
-    return cleanList((await this.getMany(source, ids)).filter((c): c is Car => !!c && !c.hidden));
+    const dealerIds = new Set((await this.r.hkeys(dealerKey(source))) as string[]);
+    return cleanList((await this.getMany(source, ids)).filter((c): c is Car => !!c && !c.hidden && !(c.sellerId && dealerIds.has(c.sellerId))));
   }
 
   /** Counts what the tabs show (no duplicates or non-cars). */
@@ -122,6 +133,29 @@ class RedisStore implements Store {
       out[day][kind] = (await this.list(source, kind, day)).length;
     })));
     return out;
+  }
+
+  async dealers(source: string): Promise<Dealer[]> {
+    const all = (await this.r.hgetall(dealerKey(source))) as Record<string, string> | null;
+    return Object.values(all ?? {}).flatMap((v) => { try { return [JSON.parse(v) as Dealer]; } catch { return []; } });
+  }
+
+  async saveDealers(source: string, list: Dealer[]) {
+    if (!list.length) return 0;
+    const old = (await this.r.hmget(dealerKey(source), ...list.map((d) => d.id))) as (string | null)[] | Record<string, string | null> | null;
+    const fields: Record<string, string> = {};
+    list.forEach((d, i) => {
+      const v = Array.isArray(old) ? old[i] : old?.[d.id];
+      let prev: Dealer | undefined;
+      try { prev = v ? JSON.parse(v) : undefined; } catch { prev = undefined; }
+      fields[d.id] = JSON.stringify(mergeDealer(prev, d));
+    });
+    await this.r.hset(dealerKey(source), fields);
+    return list.length;
+  }
+
+  async removeDealers(source: string, ids: string[]) {
+    return ids.length ? this.r.hdel(dealerKey(source), ...ids) : 0;
   }
 
   /** hidden=false brings a hidden car back (the "Undo" button). */
@@ -141,6 +175,13 @@ class RedisStore implements Store {
 
 class MemoryStore implements Store {
   m = new Map<string, Car>();
+  d = new Map<string, Dealer>();
+  async dealers(source: string) { return [...this.d.entries()].filter(([k]) => k.startsWith(source + ':')).map(([, v]) => v); }
+  async saveDealers(source: string, list: Dealer[]) {
+    for (const x of list) this.d.set(`${source}:${x.id}`, mergeDealer(this.d.get(`${source}:${x.id}`), x));
+    return list.length;
+  }
+  async removeDealers(source: string, ids: string[]) { let n = 0; for (const id of ids) if (this.d.delete(`${source}:${id}`)) n++; return n; }
   private k = (s: string, id: string) => `${s}:${id}`;
   private inDay = (c: Car, day: Day) => { const [min, max] = dayRange(day); return c.firstSeen >= min && c.firstSeen <= max; };
 
@@ -163,7 +204,8 @@ class MemoryStore implements Store {
     return n;
   }
   async list(source: string, kind: Kind, day: Day, limit = 500) {
-    return cleanList([...this.m.values()].filter((c) => c.source === source && c.kind === kind && !c.hidden && this.inDay(c, day))
+    return cleanList([...this.m.values()].filter((c) => c.source === source && c.kind === kind && !c.hidden && this.inDay(c, day)
+      && !(c.sellerId && this.d.has(`${source}:${c.sellerId}`)))
       .sort((a, b) => b.firstSeen - a.firstSeen).slice(0, limit));
   }
   async counts(source: string) {
