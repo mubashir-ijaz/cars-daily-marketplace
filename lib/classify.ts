@@ -4,6 +4,14 @@ export const DAY_MS = 86_400_000;
 /** Cars are kept for 48 h after they were first found, then deleted. */
 export const KEEP_MS = 2 * DAY_MS;
 
+/** The "No VIN" tab (cars without an MMR) is off unless SHOW_NO_VIN=true. Without it only $MIN_PROFIT+ deals are shown. */
+export const showNoVin = () => process.env.SHOW_NO_VIN === 'true';
+
+/** A seller with this many cars on their Marketplace profile is a dealer (default 3). */
+export const dealerCars = () => Number(process.env.DEALER_CARS) || 3;
+/** Individuals only: the scanner checked the seller's profile and found fewer than dealerCars() cars. */
+const individual = (sellerCars: number | null | undefined) => sellerCars != null && sellerCars < dealerCars();
+
 export const minProfit = () => {
   const raw = process.env.MIN_PROFIT;
   const n = Number(raw);
@@ -23,7 +31,7 @@ const httpsUrl = (v: unknown): string | null => {
 };
 
 // RVs, semis, equipment, bikes, boats, containers… — never shown.
-const NOT_CAR = /\b(kubota|bobcat|john deere|caterpillar|excavator|skid steer|tractor|forklift|forr?est river|wildwood|keystone|jayco|travel trailer|toy hauler|camper|motorhome|rv|peterbilt|kenworth|freightliner|volvo vnl|volvo [678]\d0|international (lt|prostar|lonestar|durastar|\d{4})|semi ?truck|container|conex|boat|pontoon|yacht|jet ?ski|harley|motorcycle|dirt ?bike|atv|utv|can-?\s*am|polaris|golf ?cart|trailer(?!\s+hitch))\b/i;
+const NOT_CAR = /\b(ship|motor ?bike|bike|kawasaki|ducati|ktm|yamaha|suzuki (gsx\w*|hayabusa|boulevard\w*|burgman)|honda (grom|shadow|goldwing|rebel|cbr|crf|trx)|scooter|moped|kubota|bobcat|john deere|caterpillar|excavator|skid steer|tractor|forklift|forr?est river|wildwood|keystone|jayco|travel trailer|toy hauler|camper|motorhome|rv|peterbilt|kenworth|freightliner|volvo vnl|volvo [678]\d0|international (lt|prostar|lonestar|durastar|\d{4})|semi ?truck|container|conex|boat|pontoon|yacht|jet ?ski|harley|motorcycle|dirt ?bike|atv|utv|can-?\s*am|polaris|golf ?cart|trailer(?!\s+hitch))\b/i;
 export const looksLikeCar = (title: string | null | undefined) =>
   !!title && /^(19[3-9]\d|20[0-3]\d)\s+[a-z]/i.test(title.trim()) && !NOT_CAR.test(title);
 
@@ -31,7 +39,9 @@ export const looksLikeCar = (title: string | null | undefined) =>
  * A no-VIN car is only shown when Manheim knew it (MMR by name) or the scanner explained why it has no MMR
  * (older scanners sent every no-VIN listing, including RVs and equipment).
  */
-export const showable = (c: Car) => looksLikeCar(c.title) && (c.kind === 'deal' || c.mmr != null || !!c.mmrNote);
+export const showable = (c: Car) => looksLikeCar(c.title) && individual(c.sellerCars) && (c.kind === 'deal'
+  ? c.mmr != null && c.profit != null && c.profit >= minProfit()
+  : showNoVin() && (c.mmr != null || !!c.mmrNote));
 
 /** Same car listed twice (relisted, or found from two locations). */
 export const dupKey = (c: Car) => c.vin ? `vin:${c.vin}`
@@ -72,11 +82,13 @@ export function toCar(source: string, raw: Record<string, unknown>, now = Date.n
 
   const mmrBy = vin ? 'vin' : mmr != null ? 'name' : null;
   // Deals priced by name (no VIN) go to Deals too; other no-VIN cars stay in No VIN, with their MMR or a note.
+  // Cars only, and (unless SHOW_NO_VIN) only deals: MMR by VIN or by name, spread >= MIN_PROFIT.
+  if (!looksLikeCar(str(raw.title, 200))) return null;
+  if (!individual(num(raw.sellerCars))) return null;
   let kind: Kind;
   if (profit != null && profit >= minProfit()) kind = 'deal';
-  else if (!vin) kind = 'novin';
+  else if (!vin && showNoVin()) kind = 'novin';
   else return null;
-  if (!looksLikeCar(str(raw.title, 200)) && !vin) return null;
   if (!vin && mmr == null && !str(raw.mmrNote, 300)) return null;
 
   return {

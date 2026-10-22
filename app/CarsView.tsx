@@ -78,7 +78,7 @@ function Photo({ src }: { src: string | null }) {
 }
 
 export default function CarsView({ cars, kind, day, sourceName, otherHref, yesterdayHref }: {
-  cars: Car[]; kind: Kind; day: Day; sourceName: string; otherHref: string; yesterdayHref: string | null;
+  cars: Car[]; kind: Kind; day: Day; sourceName: string; otherHref: string | null; yesterdayHref: string | null;
 }) {
   const router = useRouter();
   const [q, setQ] = useState('');
@@ -209,7 +209,7 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
                     : `Listings from ${sourceName} without a VIN will show up here as they are found.`}
                 </p>
                 <div className="empty-actions">
-                  <Link className="btn" href={otherHref}>{kind === 'deal' ? 'See No VIN cars' : 'See deals'}</Link>
+                  {otherHref && <Link className="btn" href={otherHref}>{kind === 'deal' ? 'See No VIN cars' : 'See deals'}</Link>}
                   {yesterdayHref && <Link className="btn ghost-btn" href={yesterdayHref}>See yesterday</Link>}
                 </div>
               </>

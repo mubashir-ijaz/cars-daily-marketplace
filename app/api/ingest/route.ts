@@ -10,9 +10,9 @@ export const dynamic = 'force-dynamic';
 // Scanners POST here:
 //   Authorization: Bearer <INGEST_KEY>
 //   { "source": "facebook", "listings": [ { id, url, title, price, mileage, vin, mmrBase, mmrGrade, ... } ] }
-// Cars with a VIN are kept only when MMR - price >= MIN_PROFIT (default 1000).
-// Cars without a VIN go to the "No VIN" tab (with their MMR by name, or mmrNote saying why there is none);
-// a no-VIN car priced by name whose spread is >= MIN_PROFIT goes to Deals.
+// Kept only when it is a car (not a bike / RV / container…), the seller was checked and has fewer than
+// DEALER_CARS (3) cars listed, and MMR - price >= MIN_PROFIT (default 1000). MMR comes from the VIN or,
+// without a VIN, from the title (mmrBy: 'name'). SHOW_NO_VIN=true also keeps no-VIN cars without a deal.
 export async function POST(req: Request) {
   const key = process.env.INGEST_KEY;
   if (!key) return NextResponse.json({ ok: false, error: 'INGEST_KEY is not set on the server.' }, { status: 500 });

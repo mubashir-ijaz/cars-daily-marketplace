@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { SOURCES, getSource } from '@/lib/sources';
 import { store, hasDatabase } from '@/lib/db';
-import { minProfit } from '@/lib/classify';
+import { minProfit, showNoVin } from '@/lib/classify';
 import { passwordEnabled } from '@/lib/auth';
 import { BRAND, TAGLINE } from '@/lib/brand';
 import type { Day, Kind } from '@/lib/types';
@@ -26,7 +26,7 @@ const I = {
 export default async function Page({ searchParams }: { searchParams: Search }) {
   const sp = await searchParams;
   const source = getSource(sp.source);
-  const kind: Kind = sp.tab === 'novin' ? 'novin' : 'deal';
+  const kind: Kind = sp.tab === 'novin' && showNoVin() ? 'novin' : 'deal';
   const day: Day = sp.day === 'yesterday' ? 'yesterday' : 'today';
   await store.prune(source.id).catch(() => 0); // drop cars older than 48 h
   const [cars, counts, allCounts] = await Promise.all([
@@ -77,9 +77,11 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
               <Link href={href({ tab: 'deal' })} className={kind === 'deal' ? 'on' : ''} aria-current={kind === 'deal' ? 'page' : undefined}>
                 <span className="ol"><Icon d={I.money} /> Deals {minLabel}</span> <span className="count">{counts[day].deal}</span>
               </Link>
-              <Link href={href({ tab: 'novin' })} className={kind === 'novin' ? 'on' : ''} aria-current={kind === 'novin' ? 'page' : undefined}>
-                <span className="ol"><Icon d={I.search} /> No VIN</span> <span className="count">{counts[day].novin}</span>
-              </Link>
+              {showNoVin() && (
+                <Link href={href({ tab: 'novin' })} className={kind === 'novin' ? 'on' : ''} aria-current={kind === 'novin' ? 'page' : undefined}>
+                  <span className="ol"><Icon d={I.search} /> No VIN</span> <span className="count">{counts[day].novin}</span>
+                </Link>
+              )}
             </nav>
           </div>
           <div className="info">
@@ -98,13 +100,13 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
               <h1>{kind === 'deal' ? `Deals with ${minLabel} spread` : 'Cars without a VIN'}</h1>
               <p className="muted">
                 {kind === 'deal'
-                  ? 'Private sellers asking less than Manheim MMR. Biggest spread first.'
+                  ? 'Private sellers asking less than Manheim MMR. Biggest spread first. Cars without a VIN are priced from their year / make / model / trim (marked “By name”).'
                   : 'No VIN in the listing, so MMR can’t be pulled — worth a call or a message to check by hand.'}
               </p>
             </div>
           </div>
           <CarsView key={`${source.id}-${kind}-${day}`} cars={cars} kind={kind} day={day} sourceName={source.name}
-            otherHref={kind === 'deal' ? href({ tab: 'novin' }) : href({ tab: 'deal' })}
+            otherHref={kind === 'novin' ? href({ tab: 'deal' }) : showNoVin() ? href({ tab: 'novin' }) : null}
             yesterdayHref={day === 'today' ? href({ day: 'yesterday' }) : null} />
         </main>
       </div>
