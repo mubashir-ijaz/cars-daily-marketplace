@@ -136,8 +136,12 @@ class RedisStore implements Store {
   }
 
   async dealers(source: string): Promise<Dealer[]> {
-    const all = (await this.r.hgetall(dealerKey(source))) as Record<string, string> | null;
-    return Object.values(all ?? {}).flatMap((v) => { try { return [JSON.parse(v) as Dealer]; } catch { return []; } });
+    // With automaticDeserialization off, HGETALL comes back as [field, value, field, value…]; older clients give an object.
+    const raw = (await this.r.hgetall(dealerKey(source))) as string[] | Record<string, string> | null;
+    const values = Array.isArray(raw) ? raw.filter((_, i) => i % 2 === 1) : Object.values(raw ?? {});
+    return values.flatMap((v) => {
+      try { const d = JSON.parse(v) as Dealer; return d && typeof d === 'object' && d.id ? [d] : []; } catch { return []; }
+    });
   }
 
   async saveDealers(source: string, list: Dealer[]) {
