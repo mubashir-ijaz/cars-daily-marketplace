@@ -1,4 +1,8 @@
-export type Kind = 'deal' | 'novin';
+/**
+ * deal = individual seller, MMR − price >= MIN_PROFIT · individual = any other individual-seller car (profit or loss)
+ * dealer = seller with DEALER_CARS+ cars or dealership wording · novin = old no-VIN tab (SHOW_NO_VIN).
+ */
+export type Kind = 'deal' | 'individual' | 'dealer' | 'novin';
 
 /** A seller the scanner found to be a dealer. Kept permanently so the next scans skip them right away. */
 export type Dealer = {
@@ -59,6 +63,8 @@ export type Car = {
   /** Cars (not parts) on the seller's Marketplace profile, and all their active listings. */
   sellerCars?: number | null;
   sellerListings?: number | null;
+  /** Why the scanner called this seller a dealer. */
+  dealerReason?: string | null;
   listed?: string | null;
   firstSeen: number;
   updatedAt: number;

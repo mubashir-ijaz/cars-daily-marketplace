@@ -1,6 +1,6 @@
 import { Redis } from '@upstash/redis';
 import type { Car, Day, Dealer, Kind } from './types';
-import { DAY_MS, KEEP_MS, cleanList } from './classify';
+import { DAY_MS, KEEP_MS, KINDS, cleanList, tabKinds } from './classify';
 
 // Storage: Upstash Redis (add it from the Vercel dashboard → Storage /
 // Marketplace → Upstash Redis; Vercel sets the env vars automatically).
@@ -14,7 +14,6 @@ const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TO
 export const hasDatabase = !!(url && token);
 
 const MAX_PER_LIST = 3000;
-const KINDS: Kind[] = ['deal', 'novin'];
 const hashKey = (source: string) => `cars:${source}`;
 const listKey = (source: string, kind: Kind) => `list:${source}:${kind}`;
 // Every stored id (hidden ones too), scored by firstSeen — used to delete old cars.
@@ -42,7 +41,15 @@ interface Store {
   removeDealers(source: string, ids: string[]): Promise<number>;
 }
 
-const mergeDealer = (old: Dealer | undefined, d: Dealer): Dealer =>
+const emptyCounts = (): Record<Kind, number> => ({ deal: 0, individual: 0, dealer: 0, novin: 0 });
+
+/** Sellers on the dealer list count as dealers even if their car was stored before they were added. */
+const byDealer = (cars: Car[], tab: Kind, dealerIds: Set<string>) => cars.filter((c) => {
+  const dealer = c.kind === 'dealer' || (!!c.sellerId && dealerIds.has(c.sellerId));
+  return tab === 'dealer' ? dealer : !dealer;
+});
+
+const mergeDealer =(old: Dealer | undefined, d: Dealer): Dealer =>
   old ? { ...old, ...d, name: d.name ?? old.name, cars: d.cars ?? old.cars, titles: d.titles.length ? d.titles : old.titles,
     location: d.location ?? old.location, firstSeen: Math.min(old.firstSeen, d.firstSeen), lastSeen: Math.max(old.lastSeen, d.lastSeen) } : d;
 
@@ -119,16 +126,19 @@ class RedisStore implements Store {
     }
   }
 
-  async list(source: string, kind: Kind, day: Day, limit = 500): Promise<Car[]> {
+  /** The cars a tab shows, newest first (one tab can read several stored kinds — see tabKinds). */
+  async list(source: string, tab: Kind, day: Day, limit = 500): Promise<Car[]> {
     const [min, max] = dayRange(day);
-    const ids = (await this.r.zrange(listKey(source, kind), max, min, { byScore: true, rev: true, offset: 0, count: limit })) as string[];
+    const ids = [...new Set((await Promise.all(tabKinds(tab).map((k) =>
+      this.r.zrange(listKey(source, k), max, min, { byScore: true, rev: true, offset: 0, count: limit }) as Promise<string[]>))).flat())];
     const dealerIds = new Set((await this.r.hkeys(dealerKey(source))) as string[]);
-    return cleanList((await this.getMany(source, ids)).filter((c): c is Car => !!c && !c.hidden && !(c.sellerId && dealerIds.has(c.sellerId))));
+    const cars = (await this.getMany(source, ids)).filter((c): c is Car => !!c && !c.hidden);
+    return cleanList(byDealer(cars, tab, dealerIds).sort((a, b) => b.firstSeen - a.firstSeen).slice(0, limit), tab);
   }
 
   /** Counts what the tabs show (no duplicates or non-cars). */
   async counts(source: string): Promise<Counts> {
-    const out = { today: { deal: 0, novin: 0 }, yesterday: { deal: 0, novin: 0 } } as Counts;
+    const out = { today: emptyCounts(), yesterday: emptyCounts() };
     await Promise.all((['today', 'yesterday'] as Day[]).flatMap((day) => KINDS.map(async (kind) => {
       out[day][kind] = (await this.list(source, kind, day)).length;
     })));
@@ -207,14 +217,16 @@ class MemoryStore implements Store {
     for (const [k, c] of this.m) if (c.source === source && c.firstSeen < cutoff) { this.m.delete(k); n++; }
     return n;
   }
-  async list(source: string, kind: Kind, day: Day, limit = 500) {
-    return cleanList([...this.m.values()].filter((c) => c.source === source && c.kind === kind && !c.hidden && this.inDay(c, day)
-      && !(c.sellerId && this.d.has(`${source}:${c.sellerId}`)))
-      .sort((a, b) => b.firstSeen - a.firstSeen).slice(0, limit));
+  async list(source: string, tab: Kind, day: Day, limit = 500) {
+    const kinds = tabKinds(tab);
+    const dealerIds = new Set([...this.d.keys()].filter((k) => k.startsWith(source + ':')).map((k) => k.slice(source.length + 1)));
+    const cars = [...this.m.values()].filter((c) => c.source === source && kinds.includes(c.kind) && !c.hidden && this.inDay(c, day));
+    return cleanList(byDealer(cars, tab, dealerIds).sort((a, b) => b.firstSeen - a.firstSeen).slice(0, limit), tab);
   }
   async counts(source: string) {
-    const n = async (day: Day, kind: Kind) => (await this.list(source, kind, day)).length;
-    return { today: { deal: await n('today', 'deal'), novin: await n('today', 'novin') }, yesterday: { deal: await n('yesterday', 'deal'), novin: await n('yesterday', 'novin') } };
+    const out = { today: emptyCounts(), yesterday: emptyCounts() };
+    for (const day of ['today', 'yesterday'] as Day[]) for (const k of KINDS) out[day][k] = (await this.list(source, k, day)).length;
+    return out;
   }
   async hide(source: string, id: string, hidden = true) {
     const c = this.m.get(this.k(source, id));

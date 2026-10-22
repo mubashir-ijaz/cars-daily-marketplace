@@ -82,7 +82,8 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
 }) {
   const router = useRouter();
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState<Sort>(kind === 'deal' ? 'profit' : 'new');
+  const priced = kind !== 'novin'; // tabs that sort and badge by profit / loss
+  const [sort, setSort] = useState<Sort>(priced ? 'profit' : 'new');
   const [flags, setFlags] = useState<Set<Flag>>(new Set());
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ car: Car; msg: string } | null>(null);
@@ -145,6 +146,8 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
   const best = deals.reduce<number | null>((m, c) => (m == null || (c.profit ?? 0) > m ? c.profit : m), null);
   const withPhone = list.filter((c) => c.phone).length;
   const lowest = list.reduce<number | null>((m, c) => (c.price != null && (m == null || c.price < m) ? c.price : m), null);
+  const profitCars = list.filter((c) => c.profit != null && c.profit >= 0).length;
+  const lossCars = list.filter((c) => c.profit != null && c.profit < 0).length;
   const withMiles = list.filter((c) => c.mileage != null);
   const avgMiles = withMiles.length ? withMiles.reduce((s, c) => s + (c.mileage ?? 0), 0) / withMiles.length : null;
 
@@ -152,7 +155,12 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
     <>
       <div className="stats">
         <div className="stat"><div className="k">{kind === 'deal' ? 'Deals' : 'Cars'}</div><div className="v">{list.length}</div></div>
-        {kind === 'deal' ? (
+        {kind === 'individual' || kind === 'dealer' ? (
+          <>
+            <div className="stat accent"><div className="k">Under MMR (profit)</div><div className="v">{profitCars}</div></div>
+            <div className="stat"><div className="k">Over MMR (loss)</div><div className="v">{lossCars}</div></div>
+          </>
+        ) : kind === 'deal' ? (
           <>
             <div className="stat accent"><div className="k">Total spread</div><div className="v">{totalSpread ? '+' + usd(totalSpread) : '—'}</div></div>
             <div className="stat"><div className="k">Best deal</div><div className="v">{best != null ? '+' + usd(best) : '—'}</div></div>
@@ -173,7 +181,7 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
             <input type="search" placeholder="Search make, model, VIN, city, phone…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search cars" />
           </label>
           <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort">
-            {kind === 'deal' && <option value="profit">Sort: Biggest spread</option>}
+            {priced && <option value="profit">Sort: Biggest profit</option>}
             <option value="new">Sort: Newest first</option>
             <option value="priceAsc">Sort: Price low → high</option>
             <option value="milesAsc">Sort: Miles low → high</option>
@@ -202,14 +210,15 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
               </>
             ) : (
               <>
-                <h3>{day === 'yesterday' ? 'Nothing from yesterday' : kind === 'deal' ? 'No deals yet today' : 'No no-VIN cars yet today'}</h3>
+                <h3>{day === 'yesterday' ? 'Nothing from yesterday' : kind === 'deal' ? 'No deals yet today' : kind === 'individual' ? 'No individual-seller cars yet today' : kind === 'dealer' ? 'No dealer cars yet today' : 'No no-VIN cars yet today'}</h3>
                 <p className="muted">
                   {kind === 'deal'
                     ? `The scanner checks ${sourceName} all day. New deals show up here automatically — and you get an email.`
-                    : `Listings from ${sourceName} without a VIN will show up here as they are found.`}
+                    : kind === 'novin' ? `Listings from ${sourceName} without a VIN will show up here as they are found.`
+                    : `Cars from ${sourceName} show up here as the scanner checks them.`}
                 </p>
                 <div className="empty-actions">
-                  {otherHref && <Link className="btn" href={otherHref}>{kind === 'deal' ? 'See No VIN cars' : 'See deals'}</Link>}
+                  {otherHref && <Link className="btn" href={otherHref}>{kind === 'deal' ? 'See all individual cars' : 'See deals'}</Link>}
                   {yesterdayHref && <Link className="btn ghost-btn" href={yesterdayHref}>See yesterday</Link>}
                 </div>
               </>
@@ -230,10 +239,13 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
               <div className="ph">
                 <Photo src={c.img} />
                 <div className="ph-top">
-                  {kind === 'deal'
-                    ? <span className="badge">+{usd(c.profit)} spread</span>
-                    : <span className="badge nv">No VIN</span>}
-                  {kind === 'deal' && c.mmrBy === 'name' && <span className="badge nv">By name</span>}
+                  {kind === 'novin'
+                    ? <span className="badge nv">No VIN</span>
+                    : c.profit == null ? <span className="badge nv">No MMR</span>
+                    : c.profit >= 0 ? <span className="badge">+{usd(c.profit)} {kind === 'deal' ? 'spread' : 'profit'}</span>
+                    : <span className="badge loss">{usd(c.profit)} loss</span>}
+                  {kind === 'dealer' && <span className="badge dl">Dealer</span>}
+                  {priced && c.mmrBy === 'name' && <span className="badge nv">By name</span>}
                   {isNew && <span className="badge new">New</span>}
                 </div>
                 <button type="button" className="hide" title="Hide this car" aria-label={`Hide ${c.title || 'this car'}`} onClick={() => hide(c)}>
@@ -258,17 +270,18 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
                 {kind === 'deal' && (
                   <div className="spread"><span>Potential profit</span><span>+{usd(c.profit)}</span></div>
                 )}
-                {kind === 'novin' && c.profit != null && (
-                  <div className={`spread ${c.profit < 0 ? 'neg' : ''}`}><span>MMR − asking</span><span>{c.profit >= 0 ? '+' : ''}{usd(c.profit)}</span></div>
+                {kind !== 'deal' && c.profit != null && (
+                  <div className={`spread ${c.profit < 0 ? 'neg' : ''}`}><span>{c.profit >= 0 ? 'Profit (MMR − asking)' : 'Loss (asking over MMR)'}</span><span>{c.profit >= 0 ? '+' : ''}{usd(c.profit)}</span></div>
                 )}
                 {c.mmrNote && <div className={`mmrnote ${c.mmr == null ? 'none' : ''}`}>{c.mmrNote}</div>}
                 {!!chips.length && (
                   <div className="chips">{chips.map((x) => <span key={x.t} className={`chip ${x.tone ?? ''}`}>{x.t}</span>)}</div>
                 )}
                 {specs && <div className="specs">{specs}</div>}
-                {(c.sellerName || c.sellerJoined || c.sellerCars != null) && (
-                  <div className="seller"><Svg d={P.user} size={14} /> {c.sellerName || 'Private seller'}{c.sellerJoined ? ` · on Facebook since ${c.sellerJoined}` : ''}{c.sellerCars != null ? ` · ${c.sellerCars} car${c.sellerCars === 1 ? '' : 's'} listed` : ''}</div>
+                {(c.sellerName || c.sellerJoined || c.sellerCars != null || kind === 'dealer') && (
+                  <div className="seller"><Svg d={P.user} size={14} /> {c.sellerName || (kind === 'dealer' ? 'Dealer' : 'Private seller')}{c.sellerJoined ? ` · on Facebook since ${c.sellerJoined}` : ''}{c.sellerCars != null ? ` · ${c.sellerCars} car${c.sellerCars === 1 ? '' : 's'} listed` : ''}</div>
                 )}
+                {kind === 'dealer' && c.dealerReason && <div className="specs">Dealer: {c.dealerReason}</div>}
                 {c.vin && <CopyVin vin={c.vin} />}
                 {c.mmrName && !c.mmrNote && <div className="mmrname">MMR: {c.mmrName}</div>}
                 {c.description && (

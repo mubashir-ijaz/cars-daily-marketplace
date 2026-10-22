@@ -35,23 +35,35 @@ const NOT_CAR = /\b(ship|motor ?bike|bike|kawasaki|ducati|ktm|yamaha|suzuki (gsx
 export const looksLikeCar = (title: string | null | undefined) =>
   !!title && /^(19[3-9]\d|20[0-3]\d)\s+[a-z]/i.test(title.trim()) && !NOT_CAR.test(title);
 
+/** Every stored kind (for pruning). */
+export const KINDS: Kind[] = ['deal', 'individual', 'dealer', 'novin'];
+/** Stored kinds each tab reads: Individual = every individual-seller car, deals included; Dealer cars also picks up
+ * cars whose seller was added to the dealer list after the car was stored. */
+export const tabKinds = (tab: Kind): Kind[] =>
+  tab === 'individual' ? ['deal', 'individual'] : tab === 'dealer' ? ['dealer', 'deal', 'individual'] : [tab];
+
 /**
- * A no-VIN car is only shown when Manheim knew it (MMR by name) or the scanner explained why it has no MMR
- * (older scanners sent every no-VIN listing, including RVs and equipment).
+ * Whether a car belongs on a tab. A no-VIN car is only shown when Manheim knew it (MMR by name) or the scanner
+ * explained why it has no MMR (older scanners sent every no-VIN listing, including RVs and equipment).
  */
-export const showable = (c: Car) => looksLikeCar(c.title) && individual(c.sellerCars) && (c.kind === 'deal'
-  ? c.mmr != null && c.profit != null && c.profit >= minProfit()
-  : showNoVin() && (c.mmr != null || !!c.mmrNote));
+export function showable(c: Car, tab: Kind = c.kind) {
+  if (!looksLikeCar(c.title)) return false;
+  if (tab === 'dealer') return true;
+  if (!individual(c.sellerCars) || c.kind === 'dealer') return false;
+  if (tab === 'individual') return c.mmr != null || !!c.mmrNote;
+  if (tab === 'deal') return c.mmr != null && c.profit != null && c.profit >= minProfit();
+  return showNoVin() && (c.mmr != null || !!c.mmrNote);
+}
 
 /** Same car listed twice (relisted, or found from two locations). */
 export const dupKey = (c: Car) => c.vin ? `vin:${c.vin}`
   : `t:${(c.title ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')}|${c.price ?? ''}|${(c.sellerName || c.location || '').toLowerCase()}`;
 
 /** Keeps the first car of each dupKey (lists are newest first) and drops non-cars. */
-export function cleanList(cars: Car[]): Car[] {
+export function cleanList(cars: Car[], tab?: Kind): Car[] {
   const seen = new Set<string>();
   return cars.filter((c) => {
-    if (!showable(c)) return false;
+    if (!showable(c, tab)) return false;
     const k = dupKey(c);
     if (seen.has(k)) return false;
     seen.add(k);
@@ -60,15 +72,13 @@ export function cleanList(cars: Car[]): Car[] {
 }
 
 /**
- * Turns a raw listing from a scanner into a stored Car, or null when it
- * doesn't belong on the dashboard (has a VIN but the spread is under MIN_PROFIT).
+ * Turns a raw listing from a scanner into a stored Car, or null when it doesn't belong on the dashboard
+ * (not a car, seller not checked, or no price / MMR to judge it by).
  */
 export function toCar(source: string, raw: Record<string, unknown>, now = Date.now()): Car | null {
   const id = str(raw.id, 100);
   const url = httpsUrl(raw.url);
   if (!id || !url) return null;
-  // Individual sellers only.
-  if (raw.dealer === true || raw.status === 'dealer') return null;
   const firstSeen = num(raw.firstSeen) ?? now;
   if (now - firstSeen > KEEP_MS) return null;
 
@@ -81,15 +91,16 @@ export function toCar(source: string, raw: Record<string, unknown>, now = Date.n
   const profit = mmr != null && price != null ? mmr - price : null;
 
   const mmrBy = vin ? 'vin' : mmr != null ? 'name' : null;
-  // Deals priced by name (no VIN) go to Deals too; other no-VIN cars stay in No VIN, with their MMR or a note.
-  // Cars only, and (unless SHOW_NO_VIN) only deals: MMR by VIN or by name, spread >= MIN_PROFIT.
-  if (!looksLikeCar(str(raw.title, 200))) return null;
-  if (!individual(num(raw.sellerCars))) return null;
+  // Cars only. Dealers go to Dealer cars; individuals (seller checked, < DEALER_CARS cars) go to Deals when
+  // MMR − price >= MIN_PROFIT (MMR by VIN or by name), else to Individual with their profit or loss.
+  if (!looksLikeCar(str(raw.title, 200)) || price == null) return null;
+  const sellerCars = num(raw.sellerCars);
   let kind: Kind;
-  if (profit != null && profit >= minProfit()) kind = 'deal';
-  else if (!vin && showNoVin()) kind = 'novin';
+  if (raw.dealer === true || raw.status === 'dealer' || (sellerCars != null && !individual(sellerCars))) kind = 'dealer';
+  else if (!individual(sellerCars)) return null; // seller not checked yet
+  else if (profit != null && profit >= minProfit()) kind = 'deal';
+  else if (mmr != null || str(raw.mmrNote, 300)) kind = 'individual';
   else return null;
-  if (!vin && mmr == null && !str(raw.mmrNote, 300)) return null;
 
   return {
     source, id, kind, url,
@@ -120,6 +131,7 @@ export function toCar(source: string, raw: Record<string, unknown>, now = Date.n
     sellerJoined: num(raw.sellerJoined),
     sellerCars: num(raw.sellerCars),
     sellerListings: num(raw.sellerListings),
+    dealerReason: kind === 'dealer' ? str(raw.dealerReason, 200) : null,
     listed: str(raw.listed, 40),
     firstSeen,
     updatedAt: now,

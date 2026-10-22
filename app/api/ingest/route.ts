@@ -10,9 +10,9 @@ export const dynamic = 'force-dynamic';
 // Scanners POST here:
 //   Authorization: Bearer <INGEST_KEY>
 //   { "source": "facebook", "listings": [ { id, url, title, price, mileage, vin, mmrBase, mmrGrade, ... } ] }
-// Kept only when it is a car (not a bike / RV / container…), the seller was checked and has fewer than
-// DEALER_CARS (3) cars listed, and MMR - price >= MIN_PROFIT (default 1000). MMR comes from the VIN or,
-// without a VIN, from the title (mmrBy: 'name'). SHOW_NO_VIN=true also keeps no-VIN cars without a deal.
+// Kept only when it is a car (not a bike / RV / container…) with a price. Sellers with DEALER_CARS (3)+ cars,
+// dealership wording, or on the dealer list → Dealer cars. Checked individuals → Deals when MMR - price >= MIN_PROFIT
+// (default 1000), else Individual with their profit or loss. MMR comes from the VIN or, without one, from the title.
 export async function POST(req: Request) {
   const bad = checkIngestKey(req);
   if (bad) return bad;
@@ -31,8 +31,10 @@ export async function POST(req: Request) {
   for (const raw of body.listings) {
     if (!raw || typeof raw !== 'object') continue;
     const car = toCar(source, raw as Record<string, unknown>, now);
-    if (car && !(car.sellerId && dealerIds.has(car.sellerId))) keep.push(car);
-    else if (typeof (raw as { id?: unknown }).id === 'string') drop.push((raw as { id: string }).id);
+    if (car) {
+      if (car.sellerId && dealerIds.has(car.sellerId)) car.kind = 'dealer';
+      keep.push(car);
+    } else if (typeof (raw as { id?: unknown }).id === 'string') drop.push((raw as { id: string }).id);
   }
 
   const res = await store.upsert(source, keep, drop);
@@ -51,6 +53,8 @@ export async function POST(req: Request) {
     new: res.created.length,
     newDeals: res.created.filter((c) => c.kind === 'deal').length,
     newNoVin: res.created.filter((c) => c.kind === 'novin').length,
+    newIndividual: res.created.filter((c) => c.kind === 'deal' || c.kind === 'individual').length,
+    newDealer: res.created.filter((c) => c.kind === 'dealer').length,
     skipped: drop.length,
     email,
   });
