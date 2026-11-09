@@ -222,3 +222,12 @@ button:disabled { cursor: default; opacity: .7; }
 .dtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .dtable a { color: var(--accent); font-weight: 600; text-decoration: none; }
 .dtable .muted { font-size: 12.5px; }
+
+/* ---------- extra filters ---------- */
+.rangebar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.rangebar label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.rangebar input { padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 14px; font-weight: 600; text-transform: none; letter-spacing: 0; width: 100%; }
+.flags { margin-bottom: 8px; }
+.flabel { font-size: 11.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.flags .n { font-size: 11px; opacity: .7; }
+@media (max-width: 640px) { .rangebar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

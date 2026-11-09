@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   const bad = checkIngestKey(req);
   if (bad) return bad;
 
-  let body: { source?: unknown; listings?: unknown };
+  let body: { source?: unknown; listings?: unknown; noEmail?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ ok: false, error: 'Bad JSON.' }, { status: 400 }); }
   if (!isSource(body.source)) return NextResponse.json({ ok: false, error: 'Unknown source.' }, { status: 400 });
   if (!Array.isArray(body.listings)) return NextResponse.json({ ok: false, error: 'listings must be an array.' }, { status: 400 });
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : new URL(req.url).origin);
   const site = `${host}/?source=${source}`;
   let email: string | null = null;
-  try { email = await emailNewCars(source, res.created, site); } catch (e) { email = 'Email failed: ' + (e as Error).message; }
+  try { email = body.noEmail === true ? 'skipped (the scanner sends its own digest email)' : await emailNewCars(source, res.created, site); } catch (e) { email = 'Email failed: ' + (e as Error).message; }
 
   return NextResponse.json({
     ok: true,

@@ -36,6 +36,18 @@ const FLAGS: { id: Flag; label: string; test: (c: Car) => boolean }[] = [
   { id: 'noIssues', label: 'No issues listed', test: (c) => !c.issues },
 ];
 
+const STATE_WORDS: Record<string, string> = { alabama: 'AL', arizona: 'AZ', arkansas: 'AR', florida: 'FL', georgia: 'GA', illinois: 'IL', iowa: 'IA', louisiana: 'LA', michigan: 'MI', mississippi: 'MS', missouri: 'MO', 'new mexico': 'NM', 'north carolina': 'NC', oklahoma: 'OK', 'south carolina': 'SC', tennessee: 'TN', texas: 'TX' };
+/** "Dallas, TX" or "Dallas, Texas" -> "TX" ('' when unknown). */
+function stateCode(loc: string | null | undefined) {
+  const t = String(loc ?? '');
+  const m = /,\s*([A-Z]{2})\b/.exec(t);
+  if (m) return m[1];
+  const l = t.toLowerCase();
+  for (const k of Object.keys(STATE_WORDS).sort((a, b) => b.length - a.length)) if (l.includes(k)) return STATE_WORDS[k];
+  return '';
+}
+const num = (v: string) => (v.trim() === '' ? null : Number(v.replace(/[$,\s]/g, '')));
+
 const ownersText = (n: number) => `${n} owner${n > 1 ? 's' : ''}`;
 const isBadTitle = (t: string) => /salvage|rebuilt|no title|lien/i.test(t);
 const telHref = (p: string) => `tel:${p.replace(/\D/g, '')}`;
@@ -86,6 +98,17 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
   const [sort, setSort] = useState<Sort>(priced ? 'profit' : 'new');
   const [flags, setFlags] = useState<Set<Flag>>(new Set());
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [states, setStates] = useState<Set<string>>(new Set());
+  const [minProfitF, setMinProfitF] = useState('');
+  const [maxPriceF, setMaxPriceF] = useState('');
+  const [minYearF, setMinYearF] = useState('');
+  const [maxMilesF, setMaxMilesF] = useState('');
+  const [newOnly, setNewOnly] = useState(false);
+  const stateCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const c of cars) { const s = stateCode(c.location); if (s) m[s] = (m[s] || 0) + 1; }
+    return m;
+  }, [cars]);
   const [toast, setToast] = useState<{ car: Car; msg: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -94,20 +117,28 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const active = FLAGS.filter((f) => flags.has(f.id));
+    const mp = num(minProfitF), xp = num(maxPriceF), my = num(minYearF), xm = num(maxMilesF);
     return cars
       .filter((c) => !hidden.has(c.id))
+      .filter((c) => !states.size || states.has(stateCode(c.location)))
+      .filter((c) => mp == null || (c.profit ?? -1e9) >= mp)
+      .filter((c) => xp == null || (c.price ?? 0) <= xp)
+      .filter((c) => my == null || (c.year ?? 0) >= my)
+      .filter((c) => xm == null || (c.mileage ?? 0) <= xm)
+      .filter((c) => !newOnly || Date.now() - c.firstSeen < 3 * 3600_000)
       .filter((c) => active.every((f) => f.test(c)))
       .filter((c) => !needle || [c.title, c.vin, c.location, c.mmrName, c.search, c.phone, c.sellerName, c.description]
         .join(' ').toLowerCase().includes(needle))
       .sort(SORTS[sort]);
-  }, [cars, q, sort, flags, hidden]);
+  }, [cars, q, sort, flags, hidden, states, minProfitF, maxPriceF, minYearF, maxMilesF, newOnly]);
 
-  const filtering = !!q.trim() || flags.size > 0;
+  const filtering = !!q.trim() || flags.size > 0 || states.size > 0 || !!(minProfitF || maxPriceF || minYearF || maxMilesF) || newOnly;
 
   function toggle(f: Flag) {
     setFlags((s) => { const n = new Set(s); if (n.has(f)) n.delete(f); else n.add(f); return n; });
   }
-  function clearFilters() { setQ(''); setFlags(new Set()); }
+  function toggleState(s: string) { setStates((x) => { const n = new Set(x); if (n.has(s)) n.delete(s); else n.add(s); return n; }); }
+  function clearFilters() { setQ(''); setFlags(new Set()); setStates(new Set()); setMinProfitF(''); setMaxPriceF(''); setMinYearF(''); setMaxMilesF(''); setNewOnly(false); }
 
   function showToast(car: Car, msg: string) {
     setToast({ car, msg });
@@ -188,7 +219,22 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
             <option value="yearDesc">Sort: Year new → old</option>
           </select>
         </div>
+        <div className="rangebar">
+          <label>Min profit<input type="number" inputMode="numeric" min={0} step={500} placeholder="$ 1000" value={minProfitF} onChange={(e) => setMinProfitF(e.target.value)} /></label>
+          <label>Max price<input type="number" inputMode="numeric" min={0} step={1000} placeholder="$ 25000" value={maxPriceF} onChange={(e) => setMaxPriceF(e.target.value)} /></label>
+          <label>Year from<input type="number" inputMode="numeric" min={1990} max={2030} placeholder="2013" value={minYearF} onChange={(e) => setMinYearF(e.target.value)} /></label>
+          <label>Max miles<input type="number" inputMode="numeric" min={0} step={5000} placeholder="125000" value={maxMilesF} onChange={(e) => setMaxMilesF(e.target.value)} /></label>
+        </div>
+        {!!Object.keys(stateCounts).length && (
+          <div className="flags" role="group" aria-label="States">
+            <span className="flabel">States</span>
+            {Object.keys(stateCounts).sort().map((s) => (
+              <button key={s} type="button" className={states.has(s) ? 'on' : ''} aria-pressed={states.has(s)} onClick={() => toggleState(s)}>{s} <span className="n">{stateCounts[s]}</span></button>
+            ))}
+          </div>
+        )}
         <div className="flags" role="group" aria-label="Quick filters">
+          <button type="button" className={newOnly ? 'on' : ''} aria-pressed={newOnly} onClick={() => setNewOnly((v) => !v)}>New (last 3 h)</button>
           {FLAGS.map((f) => (
             <button key={f.id} type="button" className={flags.has(f.id) ? 'on' : ''} aria-pressed={flags.has(f.id)} onClick={() => toggle(f.id)}>
               {flags.has(f.id) && <Svg d={P.check} size={14} />} {f.label}

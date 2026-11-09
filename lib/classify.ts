@@ -1,8 +1,23 @@
 import type { Car, Kind } from './types';
+import { conditionProblem } from './condition';
 
 export const DAY_MS = 86_400_000;
-/** Cars are kept for 48 h after they were first found, then deleted. */
-export const KEEP_MS = 2 * DAY_MS;
+/** Cars are kept for 24 h after they were first found, then deleted. */
+export const KEEP_MS = DAY_MS;
+
+/** The client buys only in these states. A car whose location names another state is dropped (ALLOWED_STATES="" turns this off). */
+const DEFAULT_STATES = 'TX,LA,OK,AR,MO,AZ,GA,FL,NC,NM,SC,TN,AL,IA,IL,MI,MS';
+export const allowedStates = () => (process.env.ALLOWED_STATES ?? DEFAULT_STATES).toUpperCase().split(/[,\s]+/).filter(Boolean);
+const STATE_NAMES: Record<string, string> = { alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO', connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH', oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI', 'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT', virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY' };
+/** "Dallas, TX" / "Dallas, Texas" -> "TX"; '' when the text names no state. */
+export function stateOf(loc: string | null | undefined): string {
+  const t = String(loc ?? '');
+  const m = /,\s*([A-Z]{2})\b/.exec(t);
+  if (m) return m[1];
+  const l = t.toLowerCase();
+  for (const k of Object.keys(STATE_NAMES).sort((a, b) => b.length - a.length)) if (new RegExp('\\b' + k + '\\b').test(l)) return STATE_NAMES[k];
+  return '';
+}
 
 /** The "No VIN" tab (cars without an MMR) is off unless SHOW_NO_VIN=true. Without it only $MIN_PROFIT+ deals are shown. */
 export const showNoVin = () => process.env.SHOW_NO_VIN === 'true';
@@ -94,6 +109,9 @@ export function toCar(source: string, raw: Record<string, unknown>, now = Date.n
   // Cars only. Dealers go to Dealer cars; individuals (seller checked, < DEALER_CARS cars) go to Deals when
   // MMR − price >= MIN_PROFIT (MMR by VIN or by name), else to Individual with their profit or loss.
   if (!looksLikeCar(str(raw.title, 200)) || price == null) return null;
+  const st = stateOf(str(raw.location, 120)), allow = allowedStates();
+  if (allow.length && st && !allow.includes(st)) return null; // outside the client's states
+  if (conditionProblem(`${str(raw.title, 200) ?? ''} ${str(raw.description, 1600) ?? ''}`)) return null; // ad mentions a real problem
   const sellerCars = num(raw.sellerCars);
   let kind: Kind;
   if (raw.dealer === true || raw.status === 'dealer' || (sellerCars != null && !individual(sellerCars))) kind = 'dealer';

@@ -39,14 +39,14 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
   const sp = await searchParams;
   const source = getSource(sp.source);
   const kind: Kind = sp.tab === 'individual' || sp.tab === 'dealer' ? sp.tab : sp.tab === 'novin' && showNoVin() ? 'novin' : 'deal';
-  const day: Day = sp.day === 'yesterday' ? 'yesterday' : 'today';
-  await store.prune(source.id).catch(() => 0); // drop cars older than 48 h
+  const day: Day = 'today'; // cars stay 24 hours, then they are deleted
+  await store.prune(source.id).catch(() => 0); // drop cars older than 24 h
   const [cars, counts, allCounts] = await Promise.all([
     store.list(source.id, kind, day),
     store.counts(source.id),
     Promise.all(SOURCES.map(async (s) => {
       const c = await store.counts(s.id);
-      return [s.id, all(c.today) + all(c.yesterday)] as const;
+      return [s.id, all(c.today)] as const;
     })),
   ]);
   const totals = Object.fromEntries(allCounts);
@@ -71,17 +71,6 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
                 </Link>
               ))}
               <span className="soon" title="More marketplaces can be added">+ More soon</span>
-            </nav>
-          </div>
-          <div className="grp">
-            <div className="gh">When found</div>
-            <nav className="opts">
-              <Link href={href({ day: 'today' })} className={day === 'today' ? 'on' : ''} aria-current={day === 'today' ? 'page' : undefined}>
-                <span className="ol"><Icon d={I.sun} /> Today</span> <span className="count">{all(counts.today)}</span>
-              </Link>
-              <Link href={href({ day: 'yesterday' })} className={day === 'yesterday' ? 'on' : ''} aria-current={day === 'yesterday' ? 'page' : undefined}>
-                <span className="ol"><Icon d={I.clock} /> Yesterday</span> <span className="count">{all(counts.yesterday)}</span>
-              </Link>
             </nav>
           </div>
           <div className="grp">
@@ -113,7 +102,7 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
           </div>
           <div className="info">
             <b>How it works</b>
-            <p>Private-seller listings are scanned all day and priced against Manheim MMR. Cars show under <b>Today</b> for 24 hours, then <b>Yesterday</b>, and clear after 48 hours. Dealer cars are kept apart under <b>Dealer cars</b>; <b>Individual</b> shows every private-seller car with its profit or loss.</p>
+            <p>Private-seller listings are scanned all day and priced against Manheim MMR. Every ad is read in full, and cars with salvage titles, frame damage or engine / transmission problems never show. Cars clear automatically 24 hours after they were found. Dealer cars are kept apart under <b>Dealer cars</b>; <b>Individual</b> shows every private-seller car with its profit or loss.</p>
           </div>
         </aside>
 
@@ -123,14 +112,14 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
           )}
           <div className="hero">
             <div>
-              <div className="eyebrow">{source.name} · {day === 'today' ? 'Last 24 hours' : '24–48 hours ago'}</div>
+              <div className="eyebrow">{source.name} · Last 24 hours</div>
               <h1>{HERO[kind](minLabel)[0]}</h1>
               <p className="muted">{HERO[kind](minLabel)[1]}</p>
             </div>
           </div>
           <CarsView key={`${source.id}-${kind}-${day}`} cars={cars} kind={kind} day={day} sourceName={source.name}
             otherHref={kind === 'deal' ? href({ tab: 'individual' }) : href({ tab: 'deal' })}
-            yesterdayHref={day === 'today' ? href({ day: 'yesterday' }) : null} />
+            yesterdayHref={null} />
         </main>
       </div>
       <footer className="foot">© {new Date().getFullYear()} {BRAND} · MMR values from Manheim · Listings from public marketplaces</footer>
