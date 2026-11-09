@@ -1,4 +1,4 @@
-// Reads a listing's text and finds real problems (salvage title, frame damage, engine noise, slipping transmission...).
+// Reads a listing's text and finds real problems (salvage title, frame damage, engine noise, damage, slipping transmission...).
 // Same rules as the scanner extension, so cars with problems never reach the dashboard.
 // Deep read of a listing's text: what is wrong with this car?
 // Each rule is [label, regex]. A hit counts unless the words just before it deny it ("no leaks", "never had an accident", "not salvage").
@@ -11,6 +11,7 @@ const BAD_RULES: [string, RegExp][] = [
   ['Does not run / drive properly', /\b(not\s+running|non[- ]?running|(does(n'?t| not)|won'?t|will\s+not|can'?t)\s+(run|start|move|drive|crank|turn\s+over)|no[- ]?start|needs?\s+(a\s+)?(tow|jump)|tow(ed)?\s+only)\b/i],
   ['Needs repair / sold for parts', /\b(needs?\s+(some\s+)?(work|repairs?|tlc|fix\w*|attention|mechanic)|mechanic'?s?\s+special|project\s+car|for\s+parts|parts\s+car|part\s+out|fixer|handyman\s+special|repair\s+needed|(needs|requires)\s+(a\s+)?(new\s+)?(engine|transmission|motor|head\s+gasket|axle|compressor))\b/i],
   ['Warning light on', /\b(check\s+engine(\s+light)?(\s+(is\s+)?on)?|cel\s+(is\s+)?on|(abs|airbag|srs|tpms|traction|esc|brake|oil|battery)\s+(warning\s+)?light(s)?(\s+(is\s+|are\s+)?on)?|warning\s+lights?|service\s+engine\s+soon|dash\s+lights?\s+on|codes?\s+p[0-3]\d{3})\b/i],
+  ['Damage mentioned', /\b((minor|moderate|major|heavy|light|some|significant|visible|cosmetic|noticeable|slight|little|small|paint|front|rear|side|body|bumper|door|fender|roof|hood|panel|interior|undercarriage|collision|structural|hail|storm|previous|prior)\s+(\w+\s+)?damage[sd]?|damaged|damage\s+(to|on|in|at)|has\s+damage|dents?\s+and\s+(scratches|dings)|body\s+work\s+needed|needs\s+body\s*work|bodywork\s+needed)\b/i],
   ['Odometer / mileage problem', /\b(odometer\s+(broken|not\s+working|rolled\s*back|rollback|issue|replaced|stopped)|cluster\s+(replaced|swap\w*|broken)|mileage\s+(not\s+actual|unknown|exempt)|tmu|true\s+mileage\s+unknown|exceeds\s+mechanical)\b/i],
   ['Other serious fault', /\b(leak(s|ing)?\s+(oil|coolant|trans\w*|fluid|power\s+steering)|ac\s+(doesn'?t|not)\s+work\w*|(a\/?c|ac)\s+(is\s+)?(out|broken|blows\s+hot)|power\s+steering\s+(leak|issue|problem|noise)|suspension\s+(issue|problem|noise|damage)|bad\s+(axle|cv|bearing|compressor|alternator|starter|catalytic)|stolen|mold|mildew|rodent|rat\s+damage|burn\s+marks?)\b/i]
 ];

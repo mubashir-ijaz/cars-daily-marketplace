@@ -27,6 +27,9 @@ export const dealerCars = () => Number(process.env.DEALER_CARS) || 3;
 /** Individuals only: the scanner checked the seller's profile and found fewer than dealerCars() cars. */
 const individual = (sellerCars: number | null | undefined) => sellerCars != null && sellerCars < dealerCars();
 
+/** Cheapest car shown (default $8,000). */
+export const minPrice = () => { const n = Number(process.env.MIN_PRICE); return process.env.MIN_PRICE && Number.isFinite(n) ? n : 8000; };
+
 export const minProfit = () => {
   const raw = process.env.MIN_PROFIT;
   const n = Number(raw);
@@ -108,7 +111,7 @@ export function toCar(source: string, raw: Record<string, unknown>, now = Date.n
   const mmrBy = vin ? 'vin' : mmr != null ? 'name' : null;
   // Cars only. Dealers go to Dealer cars; individuals (seller checked, < DEALER_CARS cars) go to Deals when
   // MMR − price >= MIN_PROFIT (MMR by VIN or by name), else to Individual with their profit or loss.
-  if (!looksLikeCar(str(raw.title, 200)) || price == null) return null;
+  if (!looksLikeCar(str(raw.title, 200)) || price == null || price < minPrice()) return null;
   const st = stateOf(str(raw.location, 120)), allow = allowedStates();
   if (allow.length && st && !allow.includes(st)) return null; // outside the client's states
   if (conditionProblem(`${str(raw.title, 200) ?? ''} ${str(raw.description, 1600) ?? ''}`)) return null; // ad mentions a real problem
