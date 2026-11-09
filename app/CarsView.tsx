@@ -113,6 +113,13 @@ export default function CarsView({ cars, kind, day, sourceName, otherHref, yeste
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  // Hidden cars are remembered in this browser (cars from the Google Sheet are not stored in the database).
+  useEffect(() => {
+    try { const v = JSON.parse(localStorage.getItem('hiddenCars') || '[]'); if (Array.isArray(v) && v.length) setHidden(new Set(v)); } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('hiddenCars', JSON.stringify([...hidden].slice(-500))); } catch { /* ignore */ }
+  }, [hidden]);
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();

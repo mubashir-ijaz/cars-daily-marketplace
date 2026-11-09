@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { getSource } from '@/lib/sources';
 import { store, hasDatabase } from '@/lib/db';
-import { minProfit, minPrice } from '@/lib/classify';
+import { minProfit, minPrice, cleanList } from '@/lib/classify';
 import { loadStatus } from '@/lib/status';
+import { sheetCars, sheetStatus } from '@/lib/sheet';
 import { passwordEnabled } from '@/lib/auth';
 import { BRAND, TAGLINE } from '@/lib/brand';
 import TopBar from './components/TopBar';
@@ -27,11 +28,18 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
   const source = getSource(sp.source);
   const tab: 'deal' | 'skipped' = sp.tab === 'skipped' ? 'skipped' : 'deal';
   await store.prune(source.id).catch(() => 0); // cars older than 24 h are deleted
-  const [cars, status] = await Promise.all([
-    tab === 'deal' ? store.list(source.id, 'deal', 'today') : Promise.resolve([]),
+  // Cars come from the Google Sheet the scanner writes to (and from the database, if the old scanner still posts there).
+  const [stored, fromSheet, sheetSt, dbSt] = await Promise.all([
+    store.list(source.id, 'deal', 'today').catch(() => []),
+    sheetCars(source.id),
+    sheetStatus(),
     loadStatus(source.id),
   ]);
-  const dealCount = tab === 'deal' ? cars.length : (await store.list(source.id, 'deal', 'today')).length;
+  const since = Date.now() - 86_400_000;
+  const all = cleanList([...fromSheet, ...stored].filter((c) => c.firstSeen > since && c.kind === 'deal').sort((a, b) => b.firstSeen - a.firstSeen), 'deal');
+  const cars = tab === 'deal' ? all : [];
+  const status = sheetSt && (!dbSt || sheetSt.at >= dbSt.at) ? sheetSt : dbSt;
+  const dealCount = all.length;
   const skipped = (status?.skipped ?? []).filter((d) => Date.now() - d.t < 86_400_000);
   const minLabel = `${usd(minProfit())}+`;
   const href = (t: 'deal' | 'skipped') => `/?source=${source.id}&tab=${t}`;
